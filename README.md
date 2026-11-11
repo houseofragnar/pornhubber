@@ -54,7 +54,7 @@ Copy `config.example.php` to `config.php` (if not already created) and open `con
 
 ```php
 // Physical directory containing your video and photo files:
-define('MEDIA_DIR', 'D:\\os\\chi\\Best'); // Set to your folder path
+define('MEDIA_DIR', {Directory}); // Set to your folder path
 ```
 
 > **Note for Windows Users:** Use double backslashes in paths, e.g., `'D:\\Media\\Videos'`.  
@@ -65,7 +65,7 @@ To allow Apache to stream multi-gigabyte video files directly with maximum zero-
 
 Open **Command Prompt** (CMD) as Administrator or normal user:
 ```cmd
-mklink /J "C:\xampp\htdocs\xxx\media" "D:\os\chi\Best"
+mklink /J "C:\xampp\htdocs\xxx\media" "{Directory}"
 ```
 
 *(If you don't create a junction, the app includes a built-in fallback streaming handler via `stream.php` that works out of the box).*
