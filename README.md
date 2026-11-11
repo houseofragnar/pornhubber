@@ -155,7 +155,7 @@ To watch videos on your smartphone or tablet connected to the same local Wi-Fi:
 
 | Constant | Description | Default |
 | :--- | :--- | :--- |
-| `MEDIA_DIR` | Physical path to your media directory or external drive | `'D:\\os\\chi\\Best'` |
+| `MEDIA_DIR` | Physical path to your media directory or external drive | `'D:\DIRECORY'` |
 | `APP_NAME` | Display title shown in the header and browser tab | `'Private Media Vault'` |
 | `MEDIA_WEB_PATH`| Web-accessible path for direct Apache streaming | `'media'` |
 | `$VIDEO_EXTS` | Array of recognized video file extensions | `['mp4', 'mov', 'webm', ...]` |
