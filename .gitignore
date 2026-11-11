@@ -1,0 +1,16 @@
+# Private User Metadata & Cached Files
+/data/metadata.json
+/data/thumbnails/*
+!/data/thumbnails/.gitkeep
+
+# Local Media Directory Symlink / Junction
+/media
+
+# Operating System & Editor Files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+.vscode/
+.idea/
+
