@@ -1,5 +1,6 @@
 <?php
-$source = 'D:\\os\\og';
+// $source = 'D:\\os\\og';
+$source = 'E:\\0x\\og';
 // Configuration for Personal Media Vault
 error_reporting(E_ALL & ~E_NOTICE);
 

@@ -114,6 +114,7 @@ while (ob_get_level() > 0) {
 @ini_set('memory_limit', '256M');
 
 header("Content-Type: $contentType");
+header("Access-Control-Allow-Origin: *");
 header("Accept-Ranges: bytes");
 header("Content-Length: " . $length);
 header("Cache-Control: max-age=2592000, public");

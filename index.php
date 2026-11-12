@@ -212,6 +212,37 @@ $serverUrl = get_server_url();
       </div>
     </div>
 
+    <!-- Gallery Exhibition Controls (Active in Photos Mode) -->
+    <div id="galleryBar" class="gallery-exhibition-bar" style="display: none;">
+      <div class="gallery-bar-left">
+        <span class="gallery-label">🏛️ Frame Style:</span>
+        <div class="frame-style-selector">
+          <button type="button" class="frame-style-btn active" data-frame="gold" title="Gilded Gold Museum Frame">
+            <span class="frame-swatch gold-swatch"></span>
+            <span>Gilded Gold</span>
+          </button>
+          <button type="button" class="frame-style-btn" data-frame="walnut" title="Royal Walnut Wood Frame">
+            <span class="frame-swatch walnut-swatch"></span>
+            <span>Walnut Wood</span>
+          </button>
+          <button type="button" class="frame-style-btn" data-frame="noir" title="Modern Gallery Noir Frame">
+            <span class="frame-swatch noir-swatch"></span>
+            <span>Gallery Noir</span>
+          </button>
+          <button type="button" class="frame-style-btn" data-frame="studio" title="Minimalist Studio Frame">
+            <span class="frame-swatch studio-swatch"></span>
+            <span>Minimalist</span>
+          </button>
+        </div>
+      </div>
+      <div class="gallery-bar-right">
+        <button type="button" id="startSlideshowBtn" class="btn btn-secondary" title="Start Fullscreen Exhibition Slideshow">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          <span id="slideshowBtnText">Exhibition Slideshow</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Media Grid / Cards List -->
     <div id="mediaGrid" class="media-grid">
       <!-- Populated dynamically by app.js -->
@@ -221,13 +252,24 @@ $serverUrl = get_server_url();
   <!-- Photo Lightbox Modal -->
   <div id="lightboxModal" class="lightbox-modal">
     <div class="lightbox-header">
-      <h3 id="lightboxTitle">Photo</h3>
-      <button type="button" id="lightboxClose" class="modal-close" style="color:#fff; font-size:2rem;">&times;</button>
+      <h3 id="lightboxTitle">Exhibition Photograph</h3>
+      <div class="lightbox-actions">
+        <button type="button" id="lightboxZoomBtn" class="lightbox-action-btn" title="Toggle Zoom">🔍 Zoom</button>
+        <button type="button" id="lightboxSlideshowBtn" class="lightbox-action-btn" title="Toggle Auto Slideshow">▶ Slideshow</button>
+        <button type="button" id="lightboxDownloadBtn" class="lightbox-action-btn" title="Download High-Res Original">⬇️ Save</button>
+        <button type="button" id="lightboxClose" class="modal-close" style="color:#fff; font-size:2rem; margin-left: 12px;">&times;</button>
+      </div>
     </div>
     <div class="lightbox-content">
       <button type="button" id="lightboxPrev" class="lightbox-nav-btn lightbox-prev">&#10094;</button>
-      <img id="lightboxImg" class="lightbox-img" src="" alt="Photo preview">
+      <div id="lightboxFrameWrap" class="lightbox-frame-wrap">
+        <img id="lightboxImg" class="lightbox-img" src="" alt="Exhibition photo">
+      </div>
       <button type="button" id="lightboxNext" class="lightbox-nav-btn lightbox-next">&#10095;</button>
+    </div>
+    <div class="lightbox-footer">
+      <span id="lightboxDimensions">Original Capture</span>
+      <span id="lightboxIndex">1 of 1</span>
     </div>
   </div>
 

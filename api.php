@@ -116,6 +116,16 @@ function scan_media_dir($dir, $baseDir, &$knownDurations, &$meta) {
         $lastTime = isset($progress['time']) ? (float)$progress['time'] : 0;
         $percent = isset($progress['percent']) ? (float)$progress['percent'] : 0;
 
+        $directAvailable = false;
+        $directFolder = __DIR__ . DIRECTORY_SEPARATOR . MEDIA_WEB_PATH;
+        if (is_dir($directFolder) && file_exists($directFolder . DIRECTORY_SEPARATOR . $entry)) {
+            $directAvailable = true;
+        }
+
+        $streamUrl = $directAvailable 
+            ? (MEDIA_WEB_PATH . '/' . rawurlencode($entry)) 
+            : ('stream.php?file=' . rawurlencode($relPath));
+
         $items[] = array(
             'id' => md5($relPath),
             'filename' => $entry,
@@ -136,7 +146,7 @@ function scan_media_dir($dir, $baseDir, &$knownDurations, &$meta) {
             'markers' => $itemMarkers,
             'last_position' => $lastTime,
             'watch_progress' => $percent,
-            'stream_url' => MEDIA_WEB_PATH . '/' . rawurlencode($entry),
+            'stream_url' => $streamUrl,
             'fallback_stream_url' => 'stream.php?file=' . rawurlencode($relPath),
             'thumb_url' => 'thumb.php?file=' . rawurlencode($relPath)
         );

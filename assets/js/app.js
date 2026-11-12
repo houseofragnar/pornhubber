@@ -11,6 +11,10 @@ const VaultUI = {
   stats: null,
   photoItems: [],
   currentPhotoIndex: 0,
+  currentFrameStyle: localStorage.getItem('vault_framestyle') || 'gold',
+  isSlideshowPlaying: false,
+  slideshowTimer: null,
+  isZoomed: false,
   driveReady: false,
   driveStatus: null,
   drivePollTimer: null,
@@ -63,9 +67,87 @@ const VaultUI = {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.currentTab = btn.getAttribute('data-tab');
+        
+        // Toggle Gallery Exhibition Bar
+        const galleryBar = document.getElementById('galleryBar');
+        if (galleryBar) {
+          galleryBar.style.display = (this.currentTab === 'photos') ? 'flex' : 'none';
+        }
+
         this.applyFilterAndSort();
       });
     });
+
+    // Gallery Frame Style Selector
+    document.querySelectorAll('.frame-style-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.frame-style-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const style = btn.getAttribute('data-frame');
+        this.setFrameStyle(style);
+      });
+    });
+
+    // Sync saved frame style button active state
+    const savedFrameBtn = document.querySelector(`.frame-style-btn[data-frame="${this.currentFrameStyle}"]`);
+    if (savedFrameBtn) {
+      document.querySelectorAll('.frame-style-btn').forEach(b => b.classList.remove('active'));
+      savedFrameBtn.classList.add('active');
+    }
+
+    // Gallery Slideshow Buttons
+    const startSlideshowBtn = document.getElementById('startSlideshowBtn');
+    if (startSlideshowBtn) {
+      startSlideshowBtn.addEventListener('click', () => {
+        if (this.photoItems.length === 0) {
+          this.showToast('No photos available in this collection');
+          return;
+        }
+        const modal = document.getElementById('lightboxModal');
+        if (!modal.classList.contains('active')) {
+          this.openLightbox(this.photoItems[0]);
+        }
+        this.toggleSlideshow();
+      });
+    }
+
+    const lightboxSlideshowBtn = document.getElementById('lightboxSlideshowBtn');
+    if (lightboxSlideshowBtn) {
+      lightboxSlideshowBtn.addEventListener('click', () => {
+        this.toggleSlideshow();
+      });
+    }
+
+    // Lightbox Zoom Controls
+    const lightboxZoomBtn = document.getElementById('lightboxZoomBtn');
+    const lightboxFrameWrap = document.getElementById('lightboxFrameWrap');
+    if (lightboxZoomBtn && lightboxFrameWrap) {
+      lightboxZoomBtn.addEventListener('click', () => {
+        this.toggleZoom();
+      });
+    }
+
+    const lightboxImg = document.getElementById('lightboxImg');
+    if (lightboxImg) {
+      lightboxImg.addEventListener('click', () => {
+        this.toggleZoom();
+      });
+    }
+
+    // Lightbox Download Button
+    const lightboxDownloadBtn = document.getElementById('lightboxDownloadBtn');
+    if (lightboxDownloadBtn) {
+      lightboxDownloadBtn.addEventListener('click', () => {
+        if (this.photoItems.length === 0) return;
+        const currentItem = this.photoItems[this.currentPhotoIndex];
+        if (!currentItem) return;
+        const a = document.createElement('a');
+        a.href = currentItem.stream_url;
+        a.download = currentItem.filename;
+        a.click();
+        this.showToast('⬇️ Downloading artwork: ' + currentItem.filename);
+      });
+    }
 
     // Sort select
     const sortSelect = document.getElementById('vaultSortSelect');
@@ -136,19 +218,54 @@ const VaultUI = {
     const lightboxPrev = document.getElementById('lightboxPrev');
     const lightboxNext = document.getElementById('lightboxNext');
     if (lightboxClose) {
-      lightboxClose.addEventListener('click', () => lightboxModal.classList.remove('active'));
+      lightboxClose.addEventListener('click', () => {
+        this.stopSlideshow();
+        this.resetZoom();
+        lightboxModal.classList.remove('active');
+      });
     }
     if (lightboxPrev) {
-      lightboxPrev.addEventListener('click', () => this.navigateLightbox(-1));
+      lightboxPrev.addEventListener('click', () => {
+        this.resetZoom();
+        this.navigateLightbox(-1);
+      });
     }
     if (lightboxNext) {
-      lightboxNext.addEventListener('click', () => this.navigateLightbox(1));
+      lightboxNext.addEventListener('click', () => {
+        this.resetZoom();
+        this.navigateLightbox(1);
+      });
     }
     if (lightboxModal) {
       lightboxModal.addEventListener('click', (e) => {
-        if (e.target === lightboxModal) lightboxModal.classList.remove('active');
+        if (e.target === lightboxModal) {
+          this.stopSlideshow();
+          this.resetZoom();
+          lightboxModal.classList.remove('active');
+        }
       });
     }
+
+    // Lightbox keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (!lightboxModal || !lightboxModal.classList.contains('active')) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.resetZoom();
+        this.navigateLightbox(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.resetZoom();
+        this.navigateLightbox(1);
+      } else if (e.key === 'Escape') {
+        this.stopSlideshow();
+        this.resetZoom();
+        lightboxModal.classList.remove('active');
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        this.toggleSlideshow();
+      }
+    });
 
     // Player action favorites button
     const playerFavBtn = document.getElementById('playerFavBtn');
@@ -392,12 +509,20 @@ const VaultUI = {
     const grid = document.getElementById('mediaGrid');
     if (!grid) return;
 
+    const isPhotosTab = (this.currentTab === 'photos');
+
+    if (isPhotosTab) {
+      grid.className = `media-grid gallery-mode frame-style-${this.currentFrameStyle}`;
+    } else {
+      grid.className = 'media-grid' + (this.currentView === 'list' ? ' list-view' : '');
+    }
+
     if (this.filteredItems.length === 0) {
       grid.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-icon">🔍</div>
-          <h3>No media files found</h3>
-          <p>No items match your active filter or search query.</p>
+          <div class="empty-icon">${isPhotosTab ? '🏛️' : '🔍'}</div>
+          <h3>${isPhotosTab ? 'Exhibition Gallery is Empty' : 'No media files found'}</h3>
+          <p>${isPhotosTab ? 'No photographs found in this collection.' : 'No items match your active filter or search query.'}</p>
         </div>
       `;
       return;
@@ -406,9 +531,99 @@ const VaultUI = {
     grid.innerHTML = '';
 
     this.filteredItems.forEach(item => {
-      const card = this.createCardElement(item);
+      const card = (item.type === 'image' || isPhotosTab)
+        ? this.createGalleryFrameElement(item)
+        : this.createCardElement(item);
       grid.appendChild(card);
     });
+  },
+
+  createGalleryFrameElement: function(item) {
+    const frame = document.createElement('div');
+    frame.className = 'gallery-art-frame';
+    frame.setAttribute('data-file', item.rel_path);
+
+    // Overhead gallery spotlight
+    const spotlight = document.createElement('div');
+    spotlight.className = 'gallery-spotlight';
+    frame.appendChild(spotlight);
+
+    // Wall hanger detail
+    const hanger = document.createElement('div');
+    hanger.className = 'gallery-hanger';
+    frame.appendChild(hanger);
+
+    // Outer Molded Picture Frame
+    const frameOuter = document.createElement('div');
+    frameOuter.className = `art-frame-outer frame-${this.currentFrameStyle}`;
+
+    // Museum Passe-Partout / Matte Board
+    const frameMat = document.createElement('div');
+    frameMat.className = 'art-frame-mat';
+
+    // Artwork Canvas Wrap
+    const canvasWrap = document.createElement('div');
+    canvasWrap.className = 'art-canvas-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'art-picture';
+    img.alt = item.title || item.filename;
+    img.loading = 'lazy';
+    img.src = item.stream_url;
+
+    const glare = document.createElement('div');
+    glare.className = 'art-glass-glare';
+
+    // Favorite heart button
+    const favBtn = document.createElement('button');
+    favBtn.className = `art-fav-btn ${item.is_favorite ? 'is-fav' : ''}`;
+    favBtn.innerHTML = item.is_favorite ? '❤️' : '🤍';
+    favBtn.title = 'Add to Exhibition Favorites';
+    favBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleFavorite(item.rel_path);
+    });
+
+    canvasWrap.appendChild(img);
+    canvasWrap.appendChild(glare);
+    canvasWrap.appendChild(favBtn);
+
+    frameMat.appendChild(canvasWrap);
+    frameOuter.appendChild(frameMat);
+    frame.appendChild(frameOuter);
+
+    // Museum Brass / Bronze Plaque
+    const plaque = document.createElement('div');
+    plaque.className = 'art-museum-plaque';
+
+    const plaqueTitle = document.createElement('div');
+    plaqueTitle.className = 'plaque-title';
+    plaqueTitle.textContent = item.title || item.filename;
+    plaqueTitle.title = item.filename;
+
+    const plaqueMeta = document.createElement('div');
+    plaqueMeta.className = 'plaque-meta';
+    
+    const dateStr = item.date_formatted ? item.date_formatted.split(' ')[0] : '2026';
+
+    plaqueMeta.innerHTML = `
+      <span>${dateStr}</span>
+      <span class="plaque-dot">•</span>
+      <span>${item.size_formatted}</span>
+      <span class="plaque-dot">•</span>
+      <span>${item.extension.toUpperCase()}</span>
+    `;
+
+    plaque.appendChild(plaqueTitle);
+    plaque.appendChild(plaqueMeta);
+    frame.appendChild(plaque);
+
+    // Click handler: opens exhibition lightbox
+    frame.addEventListener('click', () => {
+      this.openLightbox(item);
+    });
+
+    return frame;
   },
 
   createCardElement: function(item) {
@@ -521,6 +736,13 @@ const VaultUI = {
       cardFavBtn.innerHTML = item.is_favorite ? '❤️' : '🤍';
     }
 
+    // Update gallery art frame button if present
+    const artFavBtn = document.querySelector(`.gallery-art-frame[data-file="${CSS.escape(relPath)}"] .art-fav-btn`);
+    if (artFavBtn) {
+      artFavBtn.classList.toggle('is-fav', item.is_favorite);
+      artFavBtn.innerHTML = item.is_favorite ? '❤️' : '🤍';
+    }
+
     // Update player button if active
     if (VaultPlayer.currentItem && VaultPlayer.currentItem.rel_path === relPath) {
       const playerFav = document.getElementById('playerFavBtn');
@@ -546,13 +768,20 @@ const VaultUI = {
     const modal = document.getElementById('lightboxModal');
     const img = document.getElementById('lightboxImg');
     const title = document.getElementById('lightboxTitle');
+    const dimensions = document.getElementById('lightboxDimensions');
+    const index = document.getElementById('lightboxIndex');
     if (!modal || !img) return;
 
     this.currentPhotoIndex = this.photoItems.findIndex(it => it.rel_path === item.rel_path);
     if (this.currentPhotoIndex < 0) this.currentPhotoIndex = 0;
 
+    this.resetZoom();
+
     img.src = item.stream_url;
-    if (title) title.textContent = `${item.title || item.filename} (${this.currentPhotoIndex + 1} of ${this.photoItems.length})`;
+    if (title) title.textContent = item.title || item.filename;
+    if (dimensions) dimensions.textContent = `${item.size_formatted} • ${item.extension.toUpperCase()} • ${item.date_formatted}`;
+    if (index) index.textContent = `Artwork ${this.currentPhotoIndex + 1} of ${this.photoItems.length}`;
+    
     modal.classList.add('active');
   },
 
@@ -564,6 +793,86 @@ const VaultUI = {
 
     const nextItem = this.photoItems[this.currentPhotoIndex];
     this.openLightbox(nextItem);
+  },
+
+  setFrameStyle: function(style) {
+    this.currentFrameStyle = style;
+    localStorage.setItem('vault_framestyle', style);
+
+    const grid = document.getElementById('mediaGrid');
+    if (grid && this.currentTab === 'photos') {
+      grid.className = `media-grid gallery-mode frame-style-${style}`;
+    }
+
+    document.querySelectorAll('.art-frame-outer').forEach(frame => {
+      frame.className = `art-frame-outer frame-${style}`;
+    });
+
+    this.showToast(`🏛️ Frame style: ${style.charAt(0).toUpperCase() + style.slice(1)}`);
+  },
+
+  toggleSlideshow: function() {
+    this.isSlideshowPlaying = !this.isSlideshowPlaying;
+    const btn = document.getElementById('startSlideshowBtn');
+    const lightboxBtn = document.getElementById('lightboxSlideshowBtn');
+    const btnText = document.getElementById('slideshowBtnText');
+
+    if (this.isSlideshowPlaying) {
+      if (btn) btn.classList.add('btn-primary');
+      if (lightboxBtn) {
+        lightboxBtn.classList.add('active');
+        lightboxBtn.textContent = '⏸ Pause';
+      }
+      if (btnText) btnText.textContent = '⏸ Pause Slideshow';
+      this.showToast('▶ Exhibition Slideshow Started (4s)');
+
+      this.slideshowTimer = setInterval(() => {
+        this.navigateLightbox(1);
+      }, 4000);
+    } else {
+      this.stopSlideshow();
+    }
+  },
+
+  stopSlideshow: function() {
+    this.isSlideshowPlaying = false;
+    if (this.slideshowTimer) {
+      clearInterval(this.slideshowTimer);
+      this.slideshowTimer = null;
+    }
+    const btn = document.getElementById('startSlideshowBtn');
+    const lightboxBtn = document.getElementById('lightboxSlideshowBtn');
+    const btnText = document.getElementById('slideshowBtnText');
+
+    if (btn) btn.classList.remove('btn-primary');
+    if (lightboxBtn) {
+      lightboxBtn.classList.remove('active');
+      lightboxBtn.textContent = '▶ Slideshow';
+    }
+    if (btnText) btnText.textContent = 'Exhibition Slideshow';
+  },
+
+  toggleZoom: function() {
+    const wrap = document.getElementById('lightboxFrameWrap');
+    const btn = document.getElementById('lightboxZoomBtn');
+    if (!wrap) return;
+    this.isZoomed = !this.isZoomed;
+    wrap.classList.toggle('zoomed', this.isZoomed);
+    if (btn) {
+      btn.classList.toggle('active', this.isZoomed);
+      btn.textContent = this.isZoomed ? '🔍 100%' : '🔍 Zoom';
+    }
+  },
+
+  resetZoom: function() {
+    this.isZoomed = false;
+    const wrap = document.getElementById('lightboxFrameWrap');
+    const btn = document.getElementById('lightboxZoomBtn');
+    if (wrap) wrap.classList.remove('zoomed');
+    if (btn) {
+      btn.classList.remove('active');
+      btn.textContent = '🔍 Zoom';
+    }
   },
 
   showToast: function(message) {
