@@ -541,7 +541,16 @@ const VaultPlayer = {
     return 0;
   },
 
-  toggleSegmentDrawer: function() {
+  toggleSegmentDrawer: function(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
+
+    const now = Date.now();
+    if (this._lastToggle && (now - this._lastToggle < 350)) {
+      return; // Debounce rapid / duplicate events
+    }
+    this._lastToggle = now;
+
     const drawer = document.getElementById('segmentCreatorDrawer');
     if (!drawer) return;
 
