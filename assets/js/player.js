@@ -18,6 +18,8 @@ const VaultPlayer = {
     this.video = document.getElementById('vaultVideoPlayer');
     this.stage = document.getElementById('playerStage');
     if (!this.video || !this.stage) return;
+    if (this._initialized) return;
+    this._initialized = true;
 
     this.bindEvents();
     this.bindKeyboardShortcuts();
@@ -542,23 +544,94 @@ const VaultPlayer = {
   toggleSegmentDrawer: function() {
     const drawer = document.getElementById('segmentCreatorDrawer');
     if (!drawer) return;
-    if (drawer.style.display === 'block') {
+
+    const isVisible = drawer.classList.contains('active') || drawer.style.display === 'block';
+    if (isVisible) {
       this.closeSegmentDrawer();
     } else {
-      const cur = this.video ? this.video.currentTime : 0;
-      const dur = (this.video && this.video.duration) ? this.video.duration : (this.currentItem ? this.currentItem.duration : 60);
-      document.getElementById('segmentStartInput').value = this.formatTime(cur);
-      document.getElementById('segmentEndInput').value = this.formatTime(Math.min(dur || 60, cur + 30));
-      document.getElementById('segmentTitleInput').value = '';
-      this.updateDrawerDurationPreview();
-      drawer.style.display = 'block';
-      drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      this.openSegmentDrawer();
     }
+  },
+
+  openSegmentDrawer: function() {
+    const drawer = document.getElementById('segmentCreatorDrawer');
+    const btn = document.getElementById('saveSegmentBtn');
+    if (!drawer) return;
+
+    if (!this.currentItem) {
+      VaultUI.showToast('⚠️ Please select a video to cut a segment');
+      return;
+    }
+
+    // Make sure player stage is visible
+    if (this.stage && !this.stage.classList.contains('active')) {
+      this.stage.classList.add('active');
+    }
+
+    const cur = (this.video && typeof this.video.currentTime === 'number' && !isNaN(this.video.currentTime))
+      ? this.video.currentTime
+      : 0;
+
+    let dur = 60;
+    if (this.video && typeof this.video.duration === 'number' && !isNaN(this.video.duration) && isFinite(this.video.duration) && this.video.duration > 0) {
+      dur = this.video.duration;
+    } else if (this.currentItem && typeof this.currentItem.duration === 'number' && this.currentItem.duration > 0) {
+      dur = this.currentItem.duration;
+    } else {
+      dur = Math.max(60, cur + 60);
+    }
+
+    const startIn = document.getElementById('segmentStartInput');
+    const endIn = document.getElementById('segmentEndInput');
+    const titleIn = document.getElementById('segmentTitleInput');
+
+    if (startIn) startIn.value = this.formatTime(cur);
+    if (endIn) endIn.value = this.formatTime(Math.min(dur, cur + 30));
+    if (titleIn) titleIn.value = '';
+
+    this.updateDrawerDurationPreview();
+
+    drawer.style.display = 'block';
+    drawer.classList.add('active');
+    if (btn) btn.classList.add('active');
+
+    try {
+      drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (e) {}
   },
 
   closeSegmentDrawer: function() {
     const drawer = document.getElementById('segmentCreatorDrawer');
-    if (drawer) drawer.style.display = 'none';
+    const btn = document.getElementById('saveSegmentBtn');
+    if (drawer) {
+      drawer.style.display = 'none';
+      drawer.classList.remove('active');
+    }
+    if (btn) btn.classList.remove('active');
+  },
+
+  captureCurrentTime: function(which) {
+    const cur = (this.video && typeof this.video.currentTime === 'number' && !isNaN(this.video.currentTime))
+      ? this.video.currentTime
+      : 0;
+    const inputId = (which === 'start') ? 'segmentStartInput' : 'segmentEndInput';
+    const input = document.getElementById(inputId);
+    if (input) {
+      input.value = this.formatTime(cur);
+      this.updateDrawerDurationPreview();
+      VaultUI.showToast(`⏱️ Set ${which} time: ${this.formatTime(cur)}`);
+    }
+  },
+
+  nudgeTime: function(which, delta) {
+    const inputId = (which === 'start') ? 'segmentStartInput' : 'segmentEndInput';
+    const input = document.getElementById(inputId);
+    if (input) {
+      let sec = this.parseTimeToSeconds(input.value);
+      sec = Math.max(0, sec + delta);
+      input.value = this.formatTime(sec);
+      this.updateDrawerDurationPreview();
+    }
   },
 
   updateDrawerDurationPreview: function() {
@@ -604,7 +677,10 @@ const VaultPlayer = {
   },
 
   saveCurrentSegment: function() {
-    if (!this.currentItem) return;
+    if (!this.currentItem) {
+      VaultUI.showToast('⚠️ Please play a video first before saving a segment');
+      return;
+    }
     const start = this.parseTimeToSeconds(document.getElementById('segmentStartInput')?.value);
     const end = this.parseTimeToSeconds(document.getElementById('segmentEndInput')?.value);
     const title = document.getElementById('segmentTitleInput')?.value?.trim();
@@ -760,4 +836,9 @@ const VaultPlayer = {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 };
+
+// Initialize player when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  VaultPlayer.init();
+});
 

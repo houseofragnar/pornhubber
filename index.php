@@ -14,7 +14,7 @@ $serverUrl = get_server_url();
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
   
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/app.css?v=<?php echo filemtime(__DIR__ . '/assets/css/app.css'); ?>">
 </head>
 <body>
 
@@ -134,7 +134,7 @@ $serverUrl = get_server_url();
 
           <!-- Video Action Buttons -->
           <div class="player-actions-row">
-            <button type="button" id="saveSegmentBtn" class="action-btn segment-btn" title="Create and Save a Favorite Video Segment">✂️ Cut Segment</button>
+            <button type="button" id="saveSegmentBtn" class="action-btn segment-btn" onclick="VaultPlayer.toggleSegmentDrawer()" title="Create and Save a Favorite Video Segment">✂️ Cut Segment</button>
             <button type="button" id="playerFavBtn" class="action-btn fav-btn">🤍 Favorite</button>
             <button type="button" id="theaterBtn" class="action-btn" title="Toggle wide theater mode">🎦 Theater</button>
             <button type="button" id="pipBtn" class="action-btn" title="Picture in Picture">🖼️ PiP</button>
@@ -169,10 +169,10 @@ $serverUrl = get_server_url();
         </div>
 
         <!-- Segment Creator Panel (Collapsible) -->
-        <div id="segmentCreatorDrawer" class="segment-creator-drawer" style="display: none;">
+        <div id="segmentCreatorDrawer" class="segment-creator-drawer">
           <div class="segment-drawer-header">
             <h4>✂️ Save Favorite Segment / Clip Range</h4>
-            <button type="button" id="closeSegmentDrawerBtn" class="drawer-close-btn" title="Close">&times;</button>
+            <button type="button" id="closeSegmentDrawerBtn" class="drawer-close-btn" onclick="VaultPlayer.closeSegmentDrawer()" title="Close">&times;</button>
           </div>
           <div class="segment-drawer-body">
             <div class="segment-field">
@@ -185,15 +185,15 @@ $serverUrl = get_server_url();
               <div class="segment-point-box">
                 <div class="point-header">
                   <label>🟢 Start Time:</label>
-                  <button type="button" id="setStartTimeCurrentBtn" class="point-capture-btn" title="Capture current playback timestamp">⏱️ Current Time</button>
+                  <button type="button" id="setStartTimeCurrentBtn" class="point-capture-btn" onclick="VaultPlayer.captureCurrentTime('start')" title="Capture current playback timestamp">⏱️ Current Time</button>
                 </div>
                 <div class="point-inputs">
                   <input type="text" id="segmentStartInput" class="segment-input time-input" placeholder="00:00" value="00:00">
                   <div class="point-adjusters">
-                    <button type="button" class="nudge-btn" data-target="start" data-delta="-5">-5s</button>
-                    <button type="button" class="nudge-btn" data-target="start" data-delta="-1">-1s</button>
-                    <button type="button" class="nudge-btn" data-target="start" data-delta="1">+1s</button>
-                    <button type="button" class="nudge-btn" data-target="start" data-delta="5">+5s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="-5" onclick="VaultPlayer.nudgeTime('start', -5)">-5s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="-1" onclick="VaultPlayer.nudgeTime('start', -1)">-1s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="1" onclick="VaultPlayer.nudgeTime('start', 1)">+1s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="5" onclick="VaultPlayer.nudgeTime('start', 5)">+5s</button>
                   </div>
                 </div>
               </div>
@@ -202,15 +202,15 @@ $serverUrl = get_server_url();
               <div class="segment-point-box">
                 <div class="point-header">
                   <label>🔴 End Time:</label>
-                  <button type="button" id="setEndTimeCurrentBtn" class="point-capture-btn" title="Capture current playback timestamp">⏱️ Current Time</button>
+                  <button type="button" id="setEndTimeCurrentBtn" class="point-capture-btn" onclick="VaultPlayer.captureCurrentTime('end')" title="Capture current playback timestamp">⏱️ Current Time</button>
                 </div>
                 <div class="point-inputs">
                   <input type="text" id="segmentEndInput" class="segment-input time-input" placeholder="00:00" value="00:00">
                   <div class="point-adjusters">
-                    <button type="button" class="nudge-btn" data-target="end" data-delta="-5">-5s</button>
-                    <button type="button" class="nudge-btn" data-target="end" data-delta="-1">-1s</button>
-                    <button type="button" class="nudge-btn" data-target="end" data-delta="1">+1s</button>
-                    <button type="button" class="nudge-btn" data-target="end" data-delta="5">+5s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="-5" onclick="VaultPlayer.nudgeTime('end', -5)">-5s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="-1" onclick="VaultPlayer.nudgeTime('end', -1)">-1s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="1" onclick="VaultPlayer.nudgeTime('end', 1)">+1s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="5" onclick="VaultPlayer.nudgeTime('end', 5)">+5s</button>
                   </div>
                 </div>
               </div>
@@ -222,8 +222,8 @@ $serverUrl = get_server_url();
                 <span>Clip Duration: <strong id="segmentDurationPreview">00:00</strong></span>
               </div>
               <div class="segment-drawer-actions">
-                <button type="button" id="previewSegmentBtn" class="btn btn-secondary">▶ Preview Clip</button>
-                <button type="button" id="confirmSaveSegmentBtn" class="btn btn-primary">💾 Save Segment</button>
+                <button type="button" id="previewSegmentBtn" class="btn btn-secondary" onclick="VaultPlayer.previewCurrentSegment()">▶ Preview Clip</button>
+                <button type="button" id="confirmSaveSegmentBtn" class="btn btn-primary" onclick="VaultPlayer.saveCurrentSegment()">💾 Save Segment</button>
               </div>
             </div>
           </div>
@@ -406,8 +406,8 @@ $serverUrl = get_server_url();
   </div>
 
   <!-- Scripts -->
-  <script src="assets/js/thumb.js"></script>
-  <script src="assets/js/player.js"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/thumb.js?v=<?php echo filemtime(__DIR__ . '/assets/js/thumb.js'); ?>"></script>
+  <script src="assets/js/player.js?v=<?php echo filemtime(__DIR__ . '/assets/js/player.js'); ?>"></script>
+  <script src="assets/js/app.js?v=<?php echo filemtime(__DIR__ . '/assets/js/app.js'); ?>"></script>
 </body>
 </html>
