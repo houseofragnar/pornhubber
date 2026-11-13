@@ -134,6 +134,7 @@ $serverUrl = get_server_url();
 
           <!-- Video Action Buttons -->
           <div class="player-actions-row">
+            <button type="button" id="saveSegmentBtn" class="action-btn segment-btn" title="Create and Save a Favorite Video Segment">✂️ Cut Segment</button>
             <button type="button" id="playerFavBtn" class="action-btn fav-btn">🤍 Favorite</button>
             <button type="button" id="theaterBtn" class="action-btn" title="Toggle wide theater mode">🎦 Theater</button>
             <button type="button" id="pipBtn" class="action-btn" title="Picture in Picture">🖼️ PiP</button>
@@ -166,6 +167,77 @@ $serverUrl = get_server_url();
             </select>
           </div>
         </div>
+
+        <!-- Segment Creator Panel (Collapsible) -->
+        <div id="segmentCreatorDrawer" class="segment-creator-drawer" style="display: none;">
+          <div class="segment-drawer-header">
+            <h4>✂️ Save Favorite Segment / Clip Range</h4>
+            <button type="button" id="closeSegmentDrawerBtn" class="drawer-close-btn" title="Close">&times;</button>
+          </div>
+          <div class="segment-drawer-body">
+            <div class="segment-field">
+              <label>Segment Title / Description:</label>
+              <input type="text" id="segmentTitleInput" class="segment-input" placeholder="e.g. Favorite Scene, Best Part, Climax" autocomplete="off">
+            </div>
+
+            <div class="segment-range-grid">
+              <!-- Start Point -->
+              <div class="segment-point-box">
+                <div class="point-header">
+                  <label>🟢 Start Time:</label>
+                  <button type="button" id="setStartTimeCurrentBtn" class="point-capture-btn" title="Capture current playback timestamp">⏱️ Current Time</button>
+                </div>
+                <div class="point-inputs">
+                  <input type="text" id="segmentStartInput" class="segment-input time-input" placeholder="00:00" value="00:00">
+                  <div class="point-adjusters">
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="-5">-5s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="-1">-1s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="1">+1s</button>
+                    <button type="button" class="nudge-btn" data-target="start" data-delta="5">+5s</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- End Point -->
+              <div class="segment-point-box">
+                <div class="point-header">
+                  <label>🔴 End Time:</label>
+                  <button type="button" id="setEndTimeCurrentBtn" class="point-capture-btn" title="Capture current playback timestamp">⏱️ Current Time</button>
+                </div>
+                <div class="point-inputs">
+                  <input type="text" id="segmentEndInput" class="segment-input time-input" placeholder="00:00" value="00:00">
+                  <div class="point-adjusters">
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="-5">-5s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="-1">-1s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="1">+1s</button>
+                    <button type="button" class="nudge-btn" data-target="end" data-delta="5">+5s</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Segment Preview & Actions -->
+            <div class="segment-drawer-footer">
+              <div class="segment-duration-info">
+                <span>Clip Duration: <strong id="segmentDurationPreview">00:00</strong></span>
+              </div>
+              <div class="segment-drawer-actions">
+                <button type="button" id="previewSegmentBtn" class="btn btn-secondary">▶ Preview Clip</button>
+                <button type="button" id="confirmSaveSegmentBtn" class="btn btn-primary">💾 Save Segment</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Saved Segments Bar Under Player -->
+        <div id="videoSegmentsSection" class="video-segments-section">
+          <div class="segments-section-header">
+            <span class="segments-section-title">⭐ Favorite Segments for this Video (<span id="videoSegmentsCount">0</span>):</span>
+          </div>
+          <div id="videoSegmentsList" class="video-segments-list">
+            <!-- Populated dynamically with segment chips -->
+          </div>
+        </div>
       </div>
     </section>
 
@@ -183,6 +255,10 @@ $serverUrl = get_server_url();
         <button type="button" class="tab-btn" data-tab="favorites">
           <span>❤️ Favorites</span>
           <span id="countFavs" class="tab-count">0</span>
+        </button>
+        <button type="button" class="tab-btn" data-tab="segments">
+          <span>⭐ Segments</span>
+          <span id="countSegments" class="tab-count">0</span>
         </button>
         <button type="button" class="tab-btn" data-tab="photos">
           <span>📷 Photos</span>

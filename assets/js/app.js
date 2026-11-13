@@ -448,6 +448,7 @@ const VaultUI = {
     const countVideos = document.getElementById('countVideos');
     const countFavs = document.getElementById('countFavs');
     const countPhotos = document.getElementById('countPhotos');
+    const countSegments = document.getElementById('countSegments');
 
     if (countAll) countAll.textContent = this.allItems.length;
     if (countVideos) countVideos.textContent = vCount;
@@ -456,6 +457,14 @@ const VaultUI = {
     const favCount = this.allItems.filter(it => it.is_favorite).length;
     if (countFavs) countFavs.textContent = favCount;
 
+    let segCount = 0;
+    this.allItems.forEach(it => {
+      if (it.segments && Array.isArray(it.segments)) {
+        segCount += it.segments.length;
+      }
+    });
+    if (countSegments) countSegments.textContent = segCount;
+
     const statsHeader = document.getElementById('vaultHeaderStats');
     if (statsHeader) {
       statsHeader.textContent = `${vCount} Videos • ${totalDuration} • ${totalSize}`;
@@ -463,6 +472,53 @@ const VaultUI = {
   },
 
   applyFilterAndSort: function() {
+    // Special handling for Segments tab: aggregate all saved clips across videos
+    if (this.currentTab === 'segments') {
+      let segmentItems = [];
+      this.allItems.forEach(video => {
+        if (video.type === 'video' && video.segments && video.segments.length > 0) {
+          video.segments.forEach(seg => {
+            segmentItems.push({
+              type: 'segment',
+              video: video,
+              segment: seg,
+              title: seg.title || `${video.title || video.filename} - Clip`,
+              filename: video.filename,
+              mtime: seg.created_at || video.mtime || 0,
+              duration: seg.duration || (seg.end - seg.start) || 0
+            });
+          });
+        }
+      });
+
+      // Filter segments by search query
+      if (this.searchQuery) {
+        segmentItems = segmentItems.filter(item => {
+          const segTitle = (item.segment.title || '').toLowerCase();
+          const vidTitle = (item.video.title || item.video.filename || '').toLowerCase();
+          return segTitle.includes(this.searchQuery) || vidTitle.includes(this.searchQuery);
+        });
+      }
+
+      // Sort segments
+      segmentItems.sort((a, b) => {
+        if (this.currentSort === 'newest') {
+          return (b.mtime || 0) - (a.mtime || 0);
+        } else if (this.currentSort === 'oldest') {
+          return (a.mtime || 0) - (b.mtime || 0);
+        } else if (this.currentSort === 'name_asc') {
+          return (a.title || '').localeCompare(b.title || '');
+        } else if (this.currentSort === 'duration') {
+          return (b.duration || 0) - (a.duration || 0);
+        }
+        return 0;
+      });
+
+      this.filteredItems = segmentItems;
+      this.renderGrid();
+      return;
+    }
+
     let items = [...this.allItems];
 
     // 1. Tab filter
@@ -510,6 +566,7 @@ const VaultUI = {
     if (!grid) return;
 
     const isPhotosTab = (this.currentTab === 'photos');
+    const isSegmentsTab = (this.currentTab === 'segments');
 
     if (isPhotosTab) {
       grid.className = `media-grid gallery-mode frame-style-${this.currentFrameStyle}`;
@@ -518,11 +575,25 @@ const VaultUI = {
     }
 
     if (this.filteredItems.length === 0) {
+      let emptyIcon = '🔍';
+      let emptyTitle = 'No media files found';
+      let emptyDesc = 'No items match your active filter or search query.';
+
+      if (isPhotosTab) {
+        emptyIcon = '🏛️';
+        emptyTitle = 'Exhibition Gallery is Empty';
+        emptyDesc = 'No photographs found in this collection.';
+      } else if (isSegmentsTab) {
+        emptyIcon = '✂️';
+        emptyTitle = 'No Saved Segments';
+        emptyDesc = 'While playing any video, click "✂️ Cut Segment" to bookmark your favorite highlights and jump directly to them anytime.';
+      }
+
       grid.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-icon">${isPhotosTab ? '🏛️' : '🔍'}</div>
-          <h3>${isPhotosTab ? 'Exhibition Gallery is Empty' : 'No media files found'}</h3>
-          <p>${isPhotosTab ? 'No photographs found in this collection.' : 'No items match your active filter or search query.'}</p>
+          <div class="empty-icon">${emptyIcon}</div>
+          <h3>${emptyTitle}</h3>
+          <p>${emptyDesc}</p>
         </div>
       `;
       return;
@@ -531,9 +602,14 @@ const VaultUI = {
     grid.innerHTML = '';
 
     this.filteredItems.forEach(item => {
-      const card = (item.type === 'image' || isPhotosTab)
-        ? this.createGalleryFrameElement(item)
-        : this.createCardElement(item);
+      let card;
+      if (item.type === 'segment') {
+        card = this.createSegmentCardElement(item);
+      } else if (item.type === 'image' || isPhotosTab) {
+        card = this.createGalleryFrameElement(item);
+      } else {
+        card = this.createCardElement(item);
+      }
       grid.appendChild(card);
     });
   },
@@ -666,6 +742,19 @@ const VaultUI = {
         ? item.duration_formatted 
         : 'HD';
       thumbWrap.appendChild(durBadge);
+
+      // Segment indicator badge on video card
+      if (item.segments && item.segments.length > 0) {
+        const segBadge = document.createElement('div');
+        segBadge.className = 'card-segments-badge';
+        segBadge.textContent = `⭐ ${item.segments.length} Clip${item.segments.length > 1 ? 's' : ''}`;
+        segBadge.title = `This video has ${item.segments.length} saved segment${item.segments.length > 1 ? 's' : ''}. Click to play.`;
+        segBadge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          VaultPlayer.loadAndPlay(item);
+        });
+        thumbWrap.appendChild(segBadge);
+      }
     }
 
     // Favorite heart button
@@ -721,6 +810,143 @@ const VaultUI = {
     });
 
     return card;
+  },
+
+  createSegmentCardElement: function(item) {
+    const video = item.video;
+    const seg = item.segment;
+
+    const card = document.createElement('div');
+    card.className = 'segment-card';
+    card.setAttribute('data-file', video.rel_path);
+    card.setAttribute('data-seg-id', seg.id);
+
+    // Thumbnail wrap
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'card-thumb-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'card-thumb';
+    img.alt = seg.title || video.title;
+    img.loading = 'lazy';
+    img.src = video.thumb_url;
+
+    // Enqueue client-side canvas thumbnail generator
+    if (typeof ThumbGen !== 'undefined') {
+      ThumbGen.queueThumbnail(video, img);
+    }
+
+    thumbWrap.appendChild(img);
+
+    // Segment star badge top-left
+    const segBadge = document.createElement('div');
+    segBadge.className = 'card-ext-badge';
+    segBadge.textContent = '⭐ CLIP';
+    thumbWrap.appendChild(segBadge);
+
+    // Range overlay badge bottom-left
+    const rangeBadge = document.createElement('div');
+    rangeBadge.className = 'range-overlay-badge';
+    const startStr = seg.start_formatted || VaultPlayer.formatTime(seg.start);
+    const endStr = seg.end_formatted || VaultPlayer.formatTime(seg.end);
+    rangeBadge.textContent = `${startStr} ➔ ${endStr}`;
+    thumbWrap.appendChild(rangeBadge);
+
+    // Duration badge bottom-right
+    const durBadge = document.createElement('div');
+    durBadge.className = 'card-duration-badge';
+    const clipDur = (seg.end && seg.start) ? (seg.end - seg.start) : 0;
+    durBadge.textContent = VaultPlayer.formatTime(clipDur);
+    thumbWrap.appendChild(durBadge);
+
+    // Delete segment button top-right
+    const delBtn = document.createElement('button');
+    delBtn.className = 'card-fav-btn';
+    delBtn.innerHTML = '🗑️';
+    delBtn.title = 'Delete saved segment';
+    delBtn.style.opacity = '1';
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete saved segment "${seg.title}"?`)) {
+        VaultPlayer.currentItem = video;
+        VaultPlayer.deleteSegment(seg.id);
+      }
+    });
+    thumbWrap.appendChild(delBtn);
+
+    // Card Body
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.textContent = seg.title;
+    title.title = seg.title;
+
+    const parentVideoTitle = document.createElement('div');
+    parentVideoTitle.className = 'card-parent-video';
+    parentVideoTitle.style.cssText = 'font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+    parentVideoTitle.textContent = `🎬 ${video.title || video.filename}`;
+    parentVideoTitle.title = video.filename;
+
+    const footer = document.createElement('div');
+    footer.className = 'card-footer';
+    footer.innerHTML = `
+      <span style="font-size: 0.75rem; color: var(--text-dim);">${video.size_formatted}</span>
+      <button type="button" class="chip-play-btn" style="padding: 4px 12px; font-size: 0.75rem; cursor: pointer;">▶ Play Clip</button>
+    `;
+
+    body.appendChild(title);
+    body.appendChild(parentVideoTitle);
+    body.appendChild(footer);
+
+    card.appendChild(thumbWrap);
+    card.appendChild(body);
+
+    // Click handler: load parent video and immediately seek to segment start
+    card.addEventListener('click', () => {
+      VaultPlayer.loadAndPlay(video, true, seg.start, seg);
+    });
+
+    return card;
+  },
+
+  syncItemSegments: function(relPath, segments) {
+    const item = this.allItems.find(it => it.rel_path === relPath);
+    if (item) {
+      item.segments = segments || [];
+    }
+
+    // Update segment badge on existing video card in DOM
+    const card = document.querySelector(`.video-card[data-file="${CSS.escape(relPath)}"]`);
+    if (card) {
+      const thumbWrap = card.querySelector('.card-thumb-wrap');
+      let segBadge = thumbWrap ? thumbWrap.querySelector('.card-segments-badge') : null;
+      if (segments && segments.length > 0) {
+        if (!segBadge && thumbWrap) {
+          segBadge = document.createElement('div');
+          segBadge.className = 'card-segments-badge';
+          segBadge.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (item) VaultPlayer.loadAndPlay(item);
+          });
+          thumbWrap.appendChild(segBadge);
+        }
+        if (segBadge) {
+          segBadge.textContent = `⭐ ${segments.length} Clip${segments.length > 1 ? 's' : ''}`;
+          segBadge.title = `This video has ${segments.length} saved segment${segments.length > 1 ? 's' : ''}. Click to play.`;
+        }
+      } else if (segBadge) {
+        segBadge.remove();
+      }
+    }
+
+    this.updateStatsUI();
+
+    // Re-render if currently viewing the segments tab
+    if (this.currentTab === 'segments') {
+      this.applyFilterAndSort();
+    }
   },
 
   toggleFavorite: function(relPath) {

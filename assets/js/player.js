@@ -9,6 +9,8 @@ const VaultPlayer = {
   currentIndex: -1,
   autoNext: true,
   loopCurrent: false,
+  currentSegment: null,
+  isLoopingSegment: false,
   progressInterval: null,
   nextCountdownTimer: null,
 
@@ -32,9 +34,11 @@ const VaultPlayer = {
     this.itemsList = items.filter(it => it.type === 'video');
   },
 
-  loadAndPlay: function(item, shouldPlay = true) {
+  loadAndPlay: function(item, shouldPlay = true, startAt = null, activeSegment = null) {
     if (!item) return;
     this.currentItem = item;
+    this.currentSegment = activeSegment;
+    this.isLoopingSegment = false;
     this.currentIndex = this.itemsList.findIndex(it => it.rel_path === item.rel_path);
 
     // Show stage
@@ -61,38 +65,50 @@ const VaultPlayer = {
     this.video.src = item.stream_url;
     this.video.load();
 
-    // Check resume position
+    // Close segment drawer if open and render saved segments for this video
+    this.closeSegmentDrawer();
+    this.renderVideoSegments();
+
+    // Handle jump to startAt or check resume
     const resumeBanner = document.getElementById('resumeBanner');
-    const resumeText = document.getElementById('resumeText');
     if (resumeBanner) resumeBanner.classList.remove('visible');
 
-    const lastPos = item.last_position || 0;
-    const progress = item.watch_progress || 0;
+    if (startAt !== null && startAt >= 0) {
+      this.video.addEventListener('loadedmetadata', () => {
+        this.video.currentTime = startAt;
+        if (shouldPlay) this.video.play().catch(() => {});
+      }, { once: true });
+    } else {
+      // Check resume position
+      const resumeText = document.getElementById('resumeText');
+      const lastPos = item.last_position || 0;
+      const progress = item.watch_progress || 0;
 
-    // Show resume banner if previously watched > 10s and < 95%
-    if (lastPos > 10 && progress < 95) {
-      if (resumeBanner && resumeText) {
-        resumeText.textContent = `Resume from ${this.formatTime(lastPos)}?`;
-        resumeBanner.classList.add('visible');
-        
-        document.getElementById('resumeBtn').onclick = () => {
-          this.video.currentTime = lastPos;
-          resumeBanner.classList.remove('visible');
-          this.video.play();
-        };
-        document.getElementById('resumeDismiss').onclick = () => {
-          resumeBanner.classList.remove('visible');
-        };
+      // Show resume banner if previously watched > 10s and < 95%
+      if (lastPos > 10 && progress < 95) {
+        if (resumeBanner && resumeText) {
+          resumeText.textContent = `Resume from ${this.formatTime(lastPos)}?`;
+          resumeBanner.classList.add('visible');
+          
+          document.getElementById('resumeBtn').onclick = () => {
+            this.video.currentTime = lastPos;
+            resumeBanner.classList.remove('visible');
+            this.video.play();
+          };
+          document.getElementById('resumeDismiss').onclick = () => {
+            resumeBanner.classList.remove('visible');
+          };
 
-        // Auto hide after 8s
-        setTimeout(() => {
-          if (resumeBanner) resumeBanner.classList.remove('visible');
-        }, 8000);
+          // Auto hide after 8s
+          setTimeout(() => {
+            if (resumeBanner) resumeBanner.classList.remove('visible');
+          }, 8000);
+        }
       }
     }
 
     // Start playing
-    if (shouldPlay) {
+    if (shouldPlay && startAt === null) {
       const playPromise = this.video.play();
       if (playPromise !== undefined) {
         playPromise.catch(err => {
@@ -122,8 +138,22 @@ const VaultPlayer = {
   bindEvents: function() {
     const video = this.video;
 
-    // Save progress periodically
+    // Save progress periodically & check segment loop
     video.addEventListener('timeupdate', () => {
+      // Check segment boundary if watching an active segment
+      if (this.currentSegment) {
+        if (video.currentTime >= this.currentSegment.end) {
+          if (this.isLoopingSegment) {
+            video.currentTime = this.currentSegment.start;
+            video.play();
+          } else {
+            this.currentSegment = null;
+            document.querySelectorAll('.segment-chip').forEach(c => c.classList.remove('active-clip'));
+            VaultUI.showToast('Reached end of segment');
+          }
+        }
+      }
+
       // Throttle progress saves to every 5 seconds
       const now = Date.now();
       if (!this._lastSave || now - this._lastSave > 5000) {
@@ -264,6 +294,80 @@ const VaultPlayer = {
         this.stage.classList.remove('active');
         document.querySelectorAll('.video-card').forEach(c => c.classList.remove('playing'));
         document.title = 'XXX Private Vault';
+      });
+    }
+
+    // Segment Creator Drawer toggle
+    const saveSegmentBtn = document.getElementById('saveSegmentBtn');
+    if (saveSegmentBtn) {
+      saveSegmentBtn.addEventListener('click', () => {
+        this.toggleSegmentDrawer();
+      });
+    }
+
+    const closeDrawerBtn = document.getElementById('closeSegmentDrawerBtn');
+    if (closeDrawerBtn) {
+      closeDrawerBtn.addEventListener('click', () => {
+        this.closeSegmentDrawer();
+      });
+    }
+
+    // Capture current time buttons
+    const setStartBtn = document.getElementById('setStartTimeCurrentBtn');
+    if (setStartBtn) {
+      setStartBtn.addEventListener('click', () => {
+        const cur = this.video ? this.video.currentTime : 0;
+        document.getElementById('segmentStartInput').value = this.formatTime(cur);
+        this.updateDrawerDurationPreview();
+      });
+    }
+
+    const setEndBtn = document.getElementById('setEndTimeCurrentBtn');
+    if (setEndBtn) {
+      setEndBtn.addEventListener('click', () => {
+        const cur = this.video ? this.video.currentTime : 0;
+        document.getElementById('segmentEndInput').value = this.formatTime(cur);
+        this.updateDrawerDurationPreview();
+      });
+    }
+
+    // Nudge buttons for fine-tuning
+    document.querySelectorAll('.nudge-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-target');
+        const delta = parseFloat(btn.getAttribute('data-delta')) || 0;
+        const inputId = target === 'start' ? 'segmentStartInput' : 'segmentEndInput';
+        const input = document.getElementById(inputId);
+        if (input) {
+          let sec = this.parseTimeToSeconds(input.value);
+          sec = Math.max(0, sec + delta);
+          input.value = this.formatTime(sec);
+          this.updateDrawerDurationPreview();
+        }
+      });
+    });
+
+    // Time input live duration update
+    ['segmentStartInput', 'segmentEndInput'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', () => this.updateDrawerDurationPreview());
+      }
+    });
+
+    // Preview clip button
+    const previewBtn = document.getElementById('previewSegmentBtn');
+    if (previewBtn) {
+      previewBtn.addEventListener('click', () => {
+        this.previewCurrentSegment();
+      });
+    }
+
+    // Confirm save segment button
+    const confirmSaveBtn = document.getElementById('confirmSaveSegmentBtn');
+    if (confirmSaveBtn) {
+      confirmSaveBtn.addEventListener('click', () => {
+        this.saveCurrentSegment();
       });
     }
   },
@@ -418,6 +522,234 @@ const VaultPlayer = {
           document.getElementById('shortcutsBtn')?.click();
           break;
       }
+    });
+  },
+
+  parseTimeToSeconds: function(str) {
+    if (typeof str === 'number') return str;
+    if (!str) return 0;
+    const parts = str.trim().split(':').map(p => parseFloat(p) || 0);
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 1) {
+      return parts[0];
+    }
+    return 0;
+  },
+
+  toggleSegmentDrawer: function() {
+    const drawer = document.getElementById('segmentCreatorDrawer');
+    if (!drawer) return;
+    if (drawer.style.display === 'block') {
+      this.closeSegmentDrawer();
+    } else {
+      const cur = this.video ? this.video.currentTime : 0;
+      const dur = (this.video && this.video.duration) ? this.video.duration : (this.currentItem ? this.currentItem.duration : 60);
+      document.getElementById('segmentStartInput').value = this.formatTime(cur);
+      document.getElementById('segmentEndInput').value = this.formatTime(Math.min(dur || 60, cur + 30));
+      document.getElementById('segmentTitleInput').value = '';
+      this.updateDrawerDurationPreview();
+      drawer.style.display = 'block';
+      drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  },
+
+  closeSegmentDrawer: function() {
+    const drawer = document.getElementById('segmentCreatorDrawer');
+    if (drawer) drawer.style.display = 'none';
+  },
+
+  updateDrawerDurationPreview: function() {
+    const startIn = document.getElementById('segmentStartInput');
+    const endIn = document.getElementById('segmentEndInput');
+    const preview = document.getElementById('segmentDurationPreview');
+    if (!startIn || !endIn || !preview) return;
+
+    const start = this.parseTimeToSeconds(startIn.value);
+    const end = this.parseTimeToSeconds(endIn.value);
+    const diff = end - start;
+
+    if (diff > 0) {
+      preview.textContent = this.formatTime(diff);
+      preview.style.color = 'var(--accent)';
+    } else {
+      preview.textContent = 'Invalid (end must be > start)';
+      preview.style.color = 'var(--accent-danger)';
+    }
+  },
+
+  previewCurrentSegment: function() {
+    if (!this.video) return;
+    const start = this.parseTimeToSeconds(document.getElementById('segmentStartInput')?.value);
+    const end = this.parseTimeToSeconds(document.getElementById('segmentEndInput')?.value);
+
+    if (end <= start) {
+      VaultUI.showToast('⚠️ End point must be after start point');
+      return;
+    }
+
+    this.currentSegment = {
+      id: 'preview',
+      title: 'Preview Clip',
+      start: start,
+      end: end
+    };
+    this.isLoopingSegment = true;
+
+    this.video.currentTime = start;
+    this.video.play().catch(() => {});
+    VaultUI.showToast(`▶ Previewing clip: ${this.formatTime(start)} ➔ ${this.formatTime(end)} (Looping)`);
+  },
+
+  saveCurrentSegment: function() {
+    if (!this.currentItem) return;
+    const start = this.parseTimeToSeconds(document.getElementById('segmentStartInput')?.value);
+    const end = this.parseTimeToSeconds(document.getElementById('segmentEndInput')?.value);
+    const title = document.getElementById('segmentTitleInput')?.value?.trim();
+
+    if (end <= start) {
+      VaultUI.showToast('⚠️ End point must be greater than start point');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', this.currentItem.rel_path);
+    formData.append('start', start);
+    formData.append('end', end);
+    if (title) formData.append('title', title);
+
+    fetch('api.php?action=save_segment', {
+      method: 'POST',
+      body: formData
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) {
+          VaultUI.showToast('⚠️ Error: ' + (data.error || 'Failed to save segment'));
+          return;
+        }
+
+        this.currentItem.segments = data.segments || [];
+        this.renderVideoSegments();
+        this.closeSegmentDrawer();
+        
+        if (typeof VaultUI !== 'undefined') {
+          VaultUI.syncItemSegments(this.currentItem.rel_path, data.segments);
+        }
+
+        VaultUI.showToast(`⭐ Segment "${data.segment.title}" saved!`);
+      })
+      .catch(err => {
+        console.error('Save segment error:', err);
+        VaultUI.showToast('⚠️ Failed to save segment');
+      });
+  },
+
+  deleteSegment: function(segmentId) {
+    if (!this.currentItem || !segmentId) return;
+
+    const formData = new FormData();
+    formData.append('file', this.currentItem.rel_path);
+    formData.append('segment_id', segmentId);
+
+    fetch('api.php?action=delete_segment', {
+      method: 'POST',
+      body: formData
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) {
+          VaultUI.showToast('⚠️ ' + (data.error || 'Delete failed'));
+          return;
+        }
+
+        this.currentItem.segments = data.segments || [];
+        if (this.currentSegment && this.currentSegment.id === segmentId) {
+          this.currentSegment = null;
+        }
+        this.renderVideoSegments();
+
+        if (typeof VaultUI !== 'undefined') {
+          VaultUI.syncItemSegments(this.currentItem.rel_path, data.segments);
+        }
+
+        VaultUI.showToast('Segment removed');
+      })
+      .catch(err => console.error('Delete segment error:', err));
+  },
+
+  playSegment: function(seg, loop = false) {
+    if (!this.video || !seg) return;
+    this.currentSegment = seg;
+    this.isLoopingSegment = loop;
+
+    this.video.currentTime = seg.start;
+    this.video.play().catch(() => {});
+
+    // Update active highlight on chips
+    document.querySelectorAll('.segment-chip').forEach(c => c.classList.remove('active-clip'));
+    const activeChip = document.querySelector(`.segment-chip[data-seg-id="${seg.id}"]`);
+    if (activeChip) {
+      activeChip.classList.add('active-clip');
+      const loopBtn = activeChip.querySelector('.chip-loop-btn');
+      if (loopBtn) loopBtn.classList.toggle('active', loop);
+    }
+
+    VaultUI.showToast(`▶ Playing segment: "${seg.title}" (${seg.start_formatted} ➔ ${seg.end_formatted})${loop ? ' [Loop ON]' : ''}`);
+  },
+
+  renderVideoSegments: function() {
+    const section = document.getElementById('videoSegmentsSection');
+    const countEl = document.getElementById('videoSegmentsCount');
+    const list = document.getElementById('videoSegmentsList');
+    if (!section || !list) return;
+
+    const segments = (this.currentItem && this.currentItem.segments) ? this.currentItem.segments : [];
+
+    if (segments.length === 0) {
+      section.classList.remove('has-segments');
+      return;
+    }
+
+    section.classList.add('has-segments');
+    if (countEl) countEl.textContent = segments.length;
+    list.innerHTML = '';
+
+    segments.forEach(seg => {
+      const chip = document.createElement('div');
+      const isActive = (this.currentSegment && this.currentSegment.id === seg.id);
+      chip.className = `segment-chip ${isActive ? 'active-clip' : ''}`;
+      chip.setAttribute('data-seg-id', seg.id);
+
+      chip.innerHTML = `
+        <span class="chip-title" title="${seg.title}">${seg.title}</span>
+        <span class="chip-range">${seg.start_formatted} ➔ ${seg.end_formatted}</span>
+        <button type="button" class="chip-play-btn" title="Jump straight into this segment">▶ Jump</button>
+        <button type="button" class="chip-loop-btn ${isActive && this.isLoopingSegment ? 'active' : ''}" title="Repeat this segment in a loop">🔂 Loop</button>
+        <button type="button" class="chip-del-btn" title="Delete segment">&times;</button>
+      `;
+
+      chip.querySelector('.chip-play-btn').onclick = (e) => {
+        e.stopPropagation();
+        this.playSegment(seg, false);
+      };
+
+      chip.querySelector('.chip-loop-btn').onclick = (e) => {
+        e.stopPropagation();
+        const shouldLoop = !(this.currentSegment && this.currentSegment.id === seg.id && this.isLoopingSegment);
+        this.playSegment(seg, shouldLoop);
+      };
+
+      chip.querySelector('.chip-del-btn').onclick = (e) => {
+        e.stopPropagation();
+        if (confirm(`Delete saved segment "${seg.title}"?`)) {
+          this.deleteSegment(seg.id);
+        }
+      };
+
+      list.appendChild(chip);
     });
   },
 

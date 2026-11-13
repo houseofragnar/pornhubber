@@ -20,7 +20,8 @@ function load_metadata() {
         'tags' => array(),
         'titles' => array(),
         'ratings' => array(),
-        'markers' => array()
+        'markers' => array(),
+        'segments' => array()
     );
 }
 
@@ -111,6 +112,7 @@ function scan_media_dir($dir, $baseDir, &$knownDurations, &$meta) {
         $rating = isset($meta['ratings'][$itemKey]) ? (int)$meta['ratings'][$itemKey] : 0;
         $itemTags = isset($meta['tags'][$itemKey]) ? (array)$meta['tags'][$itemKey] : array();
         $itemMarkers = isset($meta['markers'][$itemKey]) ? (array)$meta['markers'][$itemKey] : array();
+        $itemSegments = isset($meta['segments'][$itemKey]) ? (array)$meta['segments'][$itemKey] : array();
         
         $progress = isset($meta['progress'][$itemKey]) ? $meta['progress'][$itemKey] : array();
         $lastTime = isset($progress['time']) ? (float)$progress['time'] : 0;
@@ -144,6 +146,7 @@ function scan_media_dir($dir, $baseDir, &$knownDurations, &$meta) {
             'rating' => $rating,
             'tags' => $itemTags,
             'markers' => $itemMarkers,
+            'segments' => $itemSegments,
             'last_position' => $lastTime,
             'watch_progress' => $percent,
             'stream_url' => $streamUrl,
@@ -218,6 +221,15 @@ if ($action === 'list') {
         }
     }
 
+    $totalSegments = 0;
+    if (isset($meta['segments']) && is_array($meta['segments'])) {
+        foreach ($meta['segments'] as $sList) {
+            if (is_array($sList)) {
+                $totalSegments += count($sList);
+            }
+        }
+    }
+
     echo json_encode(array(
         'success' => true,
         'drive_ready' => true,
@@ -229,6 +241,7 @@ if ($action === 'list') {
             'total_items' => count($mediaItems),
             'total_videos' => $totalVideos,
             'total_images' => $totalImages,
+            'total_segments' => $totalSegments,
             'total_size' => $totalSize,
             'total_size_formatted' => format_bytes($totalSize),
             'total_duration' => $totalDuration,
@@ -333,6 +346,100 @@ if ($action === 'save_duration') {
         echo json_encode(array('success' => true, 'duration' => $duration));
         exit;
     }
+}
+
+// 6. Action: Save favorite video segment (clip range start - end)
+if ($action === 'save_segment') {
+    $file = isset($_POST['file']) ? trim($_POST['file']) : '';
+    $start = isset($_POST['start']) ? (float)$_POST['start'] : 0;
+    $end = isset($_POST['end']) ? (float)$_POST['end'] : 0;
+    $title = isset($_POST['title']) ? trim($_POST['title']) : '';
+
+    if (empty($file)) {
+        echo json_encode(array('success' => false, 'error' => 'File parameter missing'));
+        exit;
+    }
+    if ($start < 0) $start = 0;
+    if ($end <= $start) {
+        echo json_encode(array('success' => false, 'error' => 'End time must be greater than start time'));
+        exit;
+    }
+
+    $clean = str_replace(array('../', '..\\'), '', $file);
+    if (!isset($meta['segments'])) {
+        $meta['segments'] = array();
+    }
+    if (!isset($meta['segments'][$clean])) {
+        $meta['segments'][$clean] = array();
+    }
+
+    $segCount = count($meta['segments'][$clean]) + 1;
+    if (empty($title)) {
+        $title = 'Favorite Scene #' . $segCount;
+    }
+
+    $segDuration = $end - $start;
+    $segmentId = 'seg_' . substr(md5(uniqid(mt_rand(), true)), 0, 8);
+
+    $newSegment = array(
+        'id' => $segmentId,
+        'title' => $title,
+        'start' => round($start, 1),
+        'end' => round($end, 1),
+        'duration' => round($segDuration, 1),
+        'start_formatted' => format_duration($start),
+        'end_formatted' => format_duration($end),
+        'duration_formatted' => format_duration($segDuration),
+        'created_at' => time()
+    );
+
+    $meta['segments'][$clean][] = $newSegment;
+
+    // Sort segments chronologically by start time
+    usort($meta['segments'][$clean], function($a, $b) {
+        if ($a['start'] == $b['start']) return 0;
+        return ($a['start'] < $b['start']) ? -1 : 1;
+    });
+
+    save_metadata($meta);
+
+    echo json_encode(array(
+        'success' => true,
+        'segment' => $newSegment,
+        'segments' => $meta['segments'][$clean]
+    ));
+    exit;
+}
+
+// 7. Action: Delete a video segment
+if ($action === 'delete_segment') {
+    $file = isset($_POST['file']) ? trim($_POST['file']) : '';
+    $segmentId = isset($_POST['segment_id']) ? trim($_POST['segment_id']) : '';
+
+    if (empty($file) || empty($segmentId)) {
+        echo json_encode(array('success' => false, 'error' => 'File or segment_id missing'));
+        exit;
+    }
+
+    $clean = str_replace(array('../', '..\\'), '', $file);
+    if (isset($meta['segments'][$clean])) {
+        $filtered = array();
+        foreach ($meta['segments'][$clean] as $s) {
+            if ($s['id'] !== $segmentId) {
+                $filtered[] = $s;
+            }
+        }
+        $meta['segments'][$clean] = $filtered;
+        save_metadata($meta);
+        echo json_encode(array(
+            'success' => true,
+            'segments' => $meta['segments'][$clean]
+        ));
+        exit;
+    }
+
+    echo json_encode(array('success' => true, 'segments' => array()));
+    exit;
 }
 
 // Default fallback
